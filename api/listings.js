@@ -3,27 +3,86 @@ import { connect } from "framer-api"
 const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 250
 
-function normalizeStatus(value) {
-  const status = String(value ?? "").trim().toLowerCase()
+const FIELD_IDS = {
+  item: "mSSWDo4io",
+  gallery: "xhdw9qQvN",
+  mainImage: "wANKeidCb",
+  price: "wGm6dxH2C",
+  location: "vIQdXD9jY",
+  shipping: "XyhhheKnx",
+  facilityType: "a_RzUX42p",
+  equipmentType: "Xg1hvsrGf",
+  state: "PFOfvSu8f",
+  statusRentSale: "Ht4YaKwQc",
+  tag: "JQfvES5Ys",
+  status2: "w249UiClY",
+  status: "yaabE1cu8",
+  description: "ABs6zZKe5",
+  seller: "hnoubwfcp",
+  sku: "nVTV8KiWQ",
+  productVideo: "LJlEVgdZ8",
+}
 
-  if (status.includes("sold")) return "sold"
-  if (status.includes("removed")) return "removed"
-  if (status.includes("inactive")) return "inactive"
-  if (status.includes("pending")) return "pending"
+function getValue(fieldData, fieldId) {
+  return fieldData?.[fieldId]?.value ?? null
+}
+
+function getImageUrl(fieldData, fieldId) {
+  const image = getValue(fieldData, fieldId)
+  return image?.url ?? null
+}
+
+function getGalleryUrls(fieldData) {
+  const gallery = getValue(fieldData, FIELD_IDS.gallery)
+
+  if (!Array.isArray(gallery)) {
+    return []
+  }
+
+  return gallery
+    .map((entry) => {
+      const imageField = Object.values(entry.fieldData ?? {}).find(
+        (field) => field?.type === "image"
+      )
+
+      return imageField?.value?.url ?? null
+    })
+    .filter(Boolean)
+}
+
+function normalizeStatus(isActive, tag) {
+  const normalizedTag = String(tag ?? "").toLowerCase()
+
+  if (normalizedTag.includes("sold")) {
+    return "sold"
+  }
+
+  if (
+    normalizedTag.includes("removed") ||
+    normalizedTag.includes("unavailable")
+  ) {
+    return "removed"
+  }
+
+  if (isActive === false) {
+    return "removed"
+  }
 
   return "active"
 }
 
-function getField(fieldData, names) {
-  if (!fieldData) return null
+function getProductVideo(fieldData) {
+  const file = getValue(fieldData, FIELD_IDS.productVideo)
 
-  for (const name of names) {
-    if (fieldData[name] !== undefined) {
-      return fieldData[name]
-    }
+  if (!file) {
+    return null
   }
 
-  return null
+  if (typeof file === "string") {
+    return file
+  }
+
+  return file.url ?? null
 }
 
 export default async function handler(request, response) {
@@ -107,94 +166,103 @@ export default async function handler(request, response) {
 
     const items = await marketplaceCollection.getItems()
 
-    return response.status(200).json({
-  collection: {
-    id: marketplaceCollection.id,
-    name: marketplaceCollection.name,
-  },
-  item_count: items.length,
-  first_item: items[0] || null,
-  first_five_items: items.slice(0, 5),
-    })
     const listings = items
       .filter((item) => !item.draft)
       .map((item) => {
-        const fields = item.fieldData || {}
+        const fields = item.fieldData ?? {}
 
-        const rawStatus = getField(fields, [
-          "Status",
-          "status",
-        ])
+        const sku = getValue(fields, FIELD_IDS.sku)
+        const tag = getValue(fields, FIELD_IDS.tag)
+        const isActive = getValue(fields, FIELD_IDS.status)
+
+        const mainImage = getImageUrl(
+          fields,
+          FIELD_IDS.mainImage
+        )
+
+        const galleryImages = getGalleryUrls(fields)
+
+        const images = Array.from(
+          new Set(
+            [mainImage, ...galleryImages].filter(Boolean)
+          )
+        )
 
         return {
-          sku: getField(fields, ["SKU", "sku"]),
-          slug: item.slug || null,
-          item: getField(fields, ["Item", "item"]),
-          image: getField(fields, ["Image", "image"]),
-          image_alt: getField(fields, [
-            "Image: Alt",
-            "Image Alt",
-            "image-alt",
-          ]),
-          price: getField(fields, ["Price", "price"]),
-          location: getField(fields, [
-            "Location",
-            "location",
-          ]),
-          shipping: getField(fields, [
-            "Shipping",
-            "shipping",
-          ]),
-          facility_type: getField(fields, [
-            "Facility Type",
-            "facility-type",
-          ]),
-          equipment_type: getField(fields, [
-            "Equipment Type",
-            "equipment-type",
-          ]),
-          state: getField(fields, ["State", "state"]),
-          status: normalizeStatus(rawStatus),
-          status_raw: rawStatus,
-          status_2: getField(fields, [
-            "Status 2",
-            "status-2",
-          ]),
-          tag: getField(fields, ["Tag", "tag"]),
-          status_rent_sale: getField(fields, [
-            "Status Rent/Sale",
-            "status-rent-sale",
-          ]),
-          description: getField(fields, [
-            "Description",
-            "description",
-          ]),
-          seller: getField(fields, [
-            "Seller",
-            "seller",
-          ]),
-          product_video: getField(fields, [
-            "Product Video",
-            "product-video",
-          ]),
-          updated_at: item.updatedAt || null,
-          source_url: item.slug
-            ? `https://www.cannabisexpertsmarketplace.net/${item.slug}`
-            : null,
+          sku,
+          slug: item.slug ?? null,
+          item: getValue(fields, FIELD_IDS.item),
+          price: getValue(fields, FIELD_IDS.price),
+          currency: "USD",
+          location: getValue(
+            fields,
+            FIELD_IDS.location
+          ),
+          shipping: getValue(
+            fields,
+            FIELD_IDS.shipping
+          ),
+          facility_type: getValue(
+            fields,
+            FIELD_IDS.facilityType
+          ),
+          equipment_type: getValue(
+            fields,
+            FIELD_IDS.equipmentType
+          ),
+          state: getValue(fields, FIELD_IDS.state),
+
+          status: normalizeStatus(isActive, tag),
+          status_active: isActive,
+          status_2: getValue(
+            fields,
+            FIELD_IDS.status2
+          ),
+          status_rent_sale: getValue(
+            fields,
+            FIELD_IDS.statusRentSale
+          ),
+          tag,
+
+          description: getValue(
+            fields,
+            FIELD_IDS.description
+          ),
+          seller: getValue(fields, FIELD_IDS.seller),
+
+          main_image_url: mainImage,
+          image_urls: images,
+          product_video_url:
+            getProductVideo(fields),
+
+          created_at: item.createdAt ?? null,
+          updated_at: item.updatedAt ?? null,
+
+          source_url:
+            "https://www.cannabisexpertsmarketplace.net",
         }
       })
-      .filter((listing) => listing.sku)
+      .filter((listing) => Boolean(listing.sku))
       .filter((listing) => {
-        if (!updatedSince) return true
-        if (!listing.updated_at) return false
+        if (!updatedSince) {
+          return true
+        }
+
+        if (!listing.updated_at) {
+          return false
+        }
 
         return (
           new Date(listing.updated_at).getTime() >
           updatedSince.getTime()
         )
       })
+      .sort((a, b) =>
+        String(a.sku).localeCompare(String(b.sku))
+      )
 
     const startIndex = (page - 1) * limit
+
     const paginatedListings = listings.slice(
       startIndex,
       startIndex + limit
@@ -220,10 +288,6 @@ export default async function handler(request, response) {
 
     return response.status(500).json({
       error: "Unable to retrieve marketplace listings",
-      message:
-        process.env.NODE_ENV === "development"
-          ? error.message
-          : undefined,
     })
   } finally {
     if (framer) {
