@@ -107,6 +107,15 @@ export default async function handler(request, response) {
 
     const items = await marketplaceCollection.getItems()
 
+    return response.status(200).json({
+  collection: {
+    id: marketplaceCollection.id,
+    name: marketplaceCollection.name,
+  },
+  item_count: items.length,
+  first_item: items[0] || null,
+  first_five_items: items.slice(0, 5),
+    })
     const listings = items
       .filter((item) => !item.draft)
       .map((item) => {
