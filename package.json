@@ -1,0 +1,9 @@
+{
+  "name": "cannabis-marketplace-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "framer-api": "latest"
+  }
+}
